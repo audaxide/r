@@ -1,0 +1,487 @@
+-- Load Turtle UI Library
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Turtle-Brand/Turtle-Lib/main/source.lua"))()
+
+-- Create UI Window
+local Window = Library:Window("Murder Mystery 2")
+
+-- Variables to store states
+local silentAimEnabled = false
+local espEnabled = false
+local pickUpAuraEnabled = false
+local walkSpeed = 16
+local roundActive = false
+
+-- Services
+local Services = setmetatable({}, {
+    __index = function(Self, Index)
+        local NewService = game:GetService(Index)
+        if NewService then
+            Self[Index] = NewService
+        end
+        return NewService
+    end
+})
+
+local LocalPlayer = Services.Players.LocalPlayer
+
+local WeaponNames = {
+    Knife = {
+        Index = "Murderer";
+        Color = Color3.fromRGB(255, 0, 0)
+    };
+    Gun = {
+        Index = "Sheriff";
+        Color = Color3.fromRGB(0, 0, 255)
+    }
+}
+
+local AttackAnimations = {
+    "rbxassetid://2467567750";
+    "rbxassetid://1957618848";
+    "rbxassetid://2470501967";
+    "rbxassetid://2467577524"
+}
+
+local Roles = {
+    Murderer = nil;
+    Sheriff = nil;
+    Closest = nil
+}
+
+local ESPInstances = {}
+local NameESPInstances = {}
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+LocalPlayer.CharacterAdded:Connect(function(Character)
+    Character = Character
+    Humanoid = Character:WaitForChild("Humanoid")
+end)
+
+local RaycastParameters = RaycastParams.new()
+RaycastParameters.IgnoreWater = true
+RaycastParameters.FilterType = Enum.RaycastFilterType.Blacklist
+RaycastParameters.FilterDescendantsInstances = {LocalPlayer.Character}
+
+local Functions = {}
+
+-- Function to check if a player is in the lobby
+function Functions.IsInLobby(Player)
+    local Character = Player.Character
+    if Character then
+        local RootPart = Character:FindFirstChild("HumanoidRootPart")
+        if RootPart then
+            -- Define the lobby spawns
+            local lobbySpawns = workspace.Lobby.Spawns:GetChildren()
+            
+            -- Check if the player is within any of the lobby spawns
+            for _, spawn in ipairs(lobbySpawns) do
+                if (RootPart.Position - spawn.Position).Magnitude <= 50 then -- Adjust the distance as needed
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Cham Function
+function Functions.CreateCham(Player, Color)
+    if Player == LocalPlayer or Functions.IsInLobby(Player) then return end -- Skip local player and players in lobby
+
+    local Character = Player.Character
+    if Character then
+        for _, Part in pairs(Character:GetChildren()) do
+            if Part:IsA("BasePart") then
+                local Cham = Instance.new("BoxHandleAdornment")
+                Cham.Name = "Cham"
+                Cham.Size = Part.Size
+                Cham.Adornee = Part
+                Cham.Color3 = Color
+                Cham.AlwaysOnTop = true
+                Cham.ZIndex = 10
+                Cham.Transparency = 0.2
+                Cham.Parent = Part
+
+                table.insert(ESPInstances, Cham)
+            end
+        end
+
+        local Billboard = Instance.new("BillboardGui")
+        Billboard.Name = "Username"
+        Billboard.AlwaysOnTop = true
+        Billboard.Size = UDim2.new(0, 200, 0, 50)
+        Billboard.StudsOffset = Vector3.new(0, 2, 0)
+        Billboard.Adornee = Character:WaitForChild("Head")
+
+        local TextLabel = Instance.new("TextLabel")
+        TextLabel.Parent = Billboard
+        TextLabel.Size = UDim2.new(0, 200, 0, 50)
+        TextLabel.BackgroundTransparency = 1
+        TextLabel.Text = Player.Name
+        TextLabel.TextColor3 = Color
+        TextLabel.TextSize = 10
+
+        Billboard.Parent = Character:WaitForChild("Head")
+        table.insert(NameESPInstances, Billboard)
+    end
+end
+
+-- Cham for Dropped Weapons
+function Functions.CreateWeaponCham(Weapon, Color)
+    for _, Part in pairs(Weapon:GetChildren()) do
+        if Part:IsA("BasePart") then
+            local Cham = Instance.new("BoxHandleAdornment")
+            Cham.Name = "WeaponCham"
+            Cham.Size = Part.Size
+            Cham.Adornee = Part
+            Cham.Color3 = Color
+            Cham.AlwaysOnTop = true
+            Cham.ZIndex = 10
+            Cham.Transparency = 0.5
+            Cham.Parent = Part
+
+            table.insert(ESPInstances, Cham)
+        end
+    end
+
+    local Billboard = Instance.new("BillboardGui")
+    Billboard.Name = "WeaponESP"
+    Billboard.AlwaysOnTop = true
+    Billboard.Size = UDim2.new(0, 200, 0, 50)
+    Billboard.StudsOffset = Vector3.new(0, 2, 0)
+    Billboard.Adornee = Weapon
+
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.Parent = Billboard
+    TextLabel.Size = UDim2.new(0, 200, 0, 50)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = "Dropped Gun"
+    TextLabel.TextColor3 = Color
+    TextLabel.TextSize = 15
+
+    Billboard.Parent = Weapon
+    table.insert(NameESPInstances, Billboard)
+end
+
+-- Clear Chams Function
+function Functions.ClearChams()
+    for _, Cham in pairs(ESPInstances) do
+        if Cham and Cham.Parent then
+            Cham:Destroy()
+        end
+    end
+    ESPInstances = {}
+
+    for _, Billboard in pairs(NameESPInstances) do
+        if Billboard and Billboard.Parent then
+            Billboard:Destroy()
+        end
+    end
+    NameESPInstances = {}
+end
+
+-- Get Closest Player Function
+function Functions.GetClosestPlayer(MaxDistance)
+    local ClosestPlayer = nil
+    local FarthestDistance = MaxDistance or math.huge
+
+    for i, v in ipairs(Services.Players:GetPlayers()) do
+        if v ~= LocalPlayer and not Functions.IsInLobby(v) then
+            pcall(function()
+                local DistanceFromPlayer = (LocalPlayer.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+                if DistanceFromPlayer < FarthestDistance then
+                    FarthestDistance = DistanceFromPlayer
+                    ClosestPlayer = v
+                end
+            end)
+        end
+    end
+
+    return ClosestPlayer
+end
+
+-- Ensure we can only shoot the murderer when we have the gun
+function Functions.CanShoot(Player)
+    return Roles.Murderer and Player == Roles.Murderer
+end
+
+local EventFunctions = {}
+
+function EventFunctions.Initialize(Player)
+    local function CharacterAdded(Character)
+        if espEnabled and not Functions.IsInLobby(Player) then
+            Functions.CreateCham(Player, Color3.fromRGB(255, 255, 0)) -- Default to yellow for innocents
+        end
+
+        Player:WaitForChild("Backpack").ChildAdded:Connect(function(Child)
+            local Role = WeaponNames[Child.Name]
+            if Role then
+                Roles[Role.Index] = Player
+                if not roundActive then
+                    roundActive = true
+                end
+
+                if espEnabled then
+                    Functions.ClearChams()
+                    for _, player in pairs(Services.Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character and not Functions.IsInLobby(player) then
+                            local roleColor = Color3.fromRGB(255, 255, 0)
+                            if Roles.Murderer == player then
+                                roleColor = WeaponNames.Knife.Color
+                            elseif Roles.Sheriff == player then
+                                roleColor = WeaponNames.Gun.Color
+                            end
+                            Functions.CreateCham(player, roleColor)
+                        end
+                    end
+                end
+
+                local Animator = Player.Character:FindFirstChildWhichIsA("Humanoid"):WaitForChild("Animator")
+                Animator.AnimationPlayed:Connect(function(AnimationTrack)
+                    if (AnimationTrack and AnimationTrack.Animation) == nil then
+                        return
+                    end
+
+                    if table.find(AttackAnimations, AnimationTrack.Animation.AnimationId) then
+                        for _, Cham in pairs(Player.Character:GetDescendants()) do
+                            if Cham:IsA("BoxHandleAdornment") then
+                                Cham.Color3 = Color3.fromRGB(255, 0, 255)
+                            end
+                        end
+
+                        while true do
+                            Services.RunService.Heartbeat:Wait(0.01)
+                            local PlayingAnimations = Animator:GetPlayingAnimationTracks()
+                            local StillAttacking = false
+                            for _, v in ipairs(PlayingAnimations) do
+                                if table.find(AttackAnimations, v.Animation.AnimationId) then
+                                    StillAttacking = true
+                                end
+                            end
+                            if not StillAttacking then
+                                break
+                            end
+                        end
+
+                        for _, Cham in pairs(Player.Character:GetDescendants()) do
+                            if Cham:IsA("BoxHandleAdornment") then
+                                Cham.Color3 = Role.Color
+                            end
+                        end
+                    end
+                end)
+            else
+                if espEnabled and not Functions.IsInLobby(Player) then
+                    Functions.CreateCham(Player, Color3.fromRGB(255, 255, 0))
+                end
+            end
+        end)
+    end
+
+    CharacterAdded(Player.Character or Player.CharacterAdded:Wait())
+    Player.CharacterAdded:Connect(CharacterAdded)
+end
+
+function EventFunctions.GunAdded(Child)
+    if Child.Name == "GunDrop" then
+        Functions.CreateWeaponCham(Child, Color3.fromRGB(0, 0, 255)) -- Blue for dropped gun
+    end
+end
+
+function EventFunctions.ContextActionService_V(actionName, InputState, inputObject)
+    if InputState == Enum.UserInputState.End then
+        return
+    end
+
+    Humanoid.WalkSpeed = walkSpeed
+end
+
+function EventFunctions.ContextActionService_B(actionName, InputState, inputObject)
+    if InputState == Enum.UserInputState.End then
+        return
+    end
+
+    espEnabled = not espEnabled
+    if espEnabled then
+        for _, Player in pairs(Services.Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character and not Functions.IsInLobby(Player) then
+                local roleColor = Color3.fromRGB(255, 255, 0)
+                if Roles.Murderer == Player then
+                    roleColor = WeaponNames.Knife.Color
+                elseif Roles.Sheriff == Player then
+                    roleColor = WeaponNames.Gun.Color
+                end
+                Functions.CreateCham(Player, roleColor)
+            end
+        end
+        for _, item in ipairs(workspace:GetChildren()) do
+            if item.Name == "GunDrop" then
+                Functions.CreateWeaponCham(item, Color3.fromRGB(0, 0, 255))
+            end
+        end
+    else
+        Functions.ClearChams()
+    end
+end
+
+function EventFunctions.ContextActionService_G(actionName, InputState, inputObject)
+    if InputState == Enum.UserInputState.End then
+        return
+    end
+    silentAimEnabled = not silentAimEnabled
+end
+
+-- Silent Aim Function
+local function getSilentAimTarget()
+    local closestPlayer = Functions.GetClosestPlayer()
+    if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return closestPlayer.Character.HumanoidRootPart.Position
+    end
+    return nil
+end
+
+-- Metatable
+local rawMetatable = getrawmetatable(game)
+local oldNameCall = rawMetatable.__namecall
+setreadonly(rawMetatable, false)
+
+rawMetatable.__namecall = newcclosure(function(self, ...)
+    local methodName = getnamecallmethod()
+    local args = {...}
+
+    if silentAimEnabled then
+        if methodName == "FireServer" and tostring(self) == "Throw" then
+            local success, error = pcall(function()
+                local targetPosition = getSilentAimTarget()
+                if targetPosition then
+                    args[2] = targetPosition
+                end
+            end)
+            if not success then
+                warn(error)
+            end
+        elseif methodName == "InvokeServer" and tostring(self) == "ShootGun" then
+            local success, error = pcall(function()
+                local targetPosition = getSilentAimTarget()
+                if targetPosition then
+                    args[2] = targetPosition
+                end
+            end)
+            if not success then
+                warn(error)
+            end
+        end
+    end
+
+    return oldNameCall(self, unpack(args))
+end)
+
+setreadonly(rawMetatable, true)
+
+-- Event Listeners
+for i, v in ipairs(Services.Players:GetPlayers()) do
+    EventFunctions.Initialize(v)
+end
+Services.Players.PlayerAdded:Connect(EventFunctions.Initialize)
+workspace.ChildAdded:Connect(EventFunctions.GunAdded)
+
+-- UI Setup
+Window:Toggle("Silent Aim", false, function(state)
+    silentAimEnabled = state
+end)
+
+Window:Toggle("ESP", false, function(state)
+    espEnabled = state
+    if not state then
+        Functions.ClearChams()
+    else
+        for _, Player in pairs(Services.Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character and not Functions.IsInLobby(Player) then
+                local roleColor = Color3.fromRGB(255, 255, 0)
+                if Roles.Murderer == Player then
+                    roleColor = WeaponNames.Knife.Color
+                elseif Roles.Sheriff == Player then
+                    roleColor = WeaponNames.Gun.Color
+                end
+                Functions.CreateCham(Player, roleColor)
+            end
+        end
+        for _, item in ipairs(workspace:GetChildren()) do
+            if item.Name == "GunDrop" then
+                Functions.CreateWeaponCham(item, Color3.fromRGB(0, 0, 255))
+            end
+        end
+    end
+end)
+
+Window:Toggle("Pick Up Aura", false, function(state)
+    pickUpAuraEnabled = state
+end)
+
+Window:Slider("Walk Speed", 16, 25, 16, function(value)
+    walkSpeed = value
+    Humanoid.WalkSpeed = value
+end)
+
+local murdererLabel = Window:Label("Murderer: N/A")
+local sheriffLabel = Window:Label("Sheriff: N/A")
+local gunStatusLabel = Window:Label("Gun Dropped: No")
+
+local function updateGunStatus()
+    local gunDropped = workspace:FindFirstChild("GunDrop") ~= nil
+    gunStatusLabel.Text = "Gun Dropped: " .. (gunDropped and "Yes" or "No")
+end
+
+local function updateRoles()
+    if Roles.Murderer then
+        murdererLabel.Text = "Murderer: " .. Roles.Murderer.Name
+    else
+        murdererLabel.Text = "Murderer: N/A"
+    end
+
+    if Roles.Sheriff then
+        sheriffLabel.Text = "Sheriff: " .. Roles.Sheriff.Name
+    else
+        sheriffLabel.Text = "Sheriff: N/A"
+    end
+end
+
+-- Pick Up Aura Functionality
+local function collectItems()
+    while true do
+        if pickUpAuraEnabled then
+            local coinContainer = workspace:FindFirstChild("CoinContainer")
+            if coinContainer then
+                local items = coinContainer:GetChildren()
+                for _, item in ipairs(items) do
+                    if (item.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 15 then
+                        firetouchinterest(LocalPlayer.Character.HumanoidRootPart, item, 0)
+                        firetouchinterest(LocalPlayer.Character.HumanoidRootPart, item, 1)
+                    end
+                end
+            end
+
+            local guns = workspace:GetChildren()
+            for _, gun in ipairs(guns) do
+                if gun.Name == "GunDrop" and (gun.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 15 then
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, gun, 0)
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, gun, 1)
+                end
+            end
+        end
+        wait(0.1)
+    end
+end
+
+-- Start the item collection in a separate thread
+spawn(collectItems)
+
+-- Update roles display every second
+spawn(function()
+    while true do
+        updateGunStatus()
+        updateRoles()
+        wait(1)
+    end
+end)

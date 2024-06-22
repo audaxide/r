@@ -1,0 +1,104 @@
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Turtle-Brand/Turtle-Lib/main/source.lua"))()
+
+getgenv().VoicechatSpySettings = {
+    TrackVoice3d = false,
+    FollowDistance = 5
+}
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local mainWindow = library:Window("Voicechat Spy")
+local spyingTargetLabel = mainWindow:Label("Spying: None")
+
+local currentSpiedPlayer = nil
+local connections = {}
+
+local function updateSpyingTarget(displayName)
+    spyingTargetLabel.Text = "Spying: " .. (displayName or "None")
+end
+
+local function stopSpying()
+    if currentSpiedPlayer then
+        currentSpiedPlayer.state = false
+        currentSpiedPlayer = nil
+        updateSpyingTarget(nil)
+        game:GetService("SoundService"):SetListener(Enum.ListenerType.Camera)
+    end
+end
+
+local LP, Players, RunService, SoundService = game:GetService('Players').LocalPlayer, game:GetService('Players'), game:GetService('RunService'), game:GetService('SoundService')
+local SpiedPlayers = {}
+
+local function SpyVoicechat(Player)
+    local ContinueLoop = true
+    local CurrentCamera, Character, VoiceOrigin = workspace.CurrentCamera, Player.Character, Player.Character and Player.Character:FindFirstChild('HumanoidRootPart')
+    
+    if CurrentCamera and Character and VoiceOrigin then
+        updateSpyingTarget(Player.DisplayName)
+    end
+
+    currentSpiedPlayer = { player = Player, state = true }
+
+    task.spawn(function()
+        while currentSpiedPlayer and currentSpiedPlayer.player == Player and currentSpiedPlayer.state and Player.Parent and CurrentCamera.Parent and Character.Parent and VoiceOrigin.Parent do
+            if getgenv().VoicechatSpySettings.TrackVoice3d then
+                SoundService:SetListener(Enum.ListenerType.CFrame, VoiceOrigin.CFrame * CFrame.new(0, 0, getgenv().VoicechatSpySettings.FollowDistance))
+            else
+                SoundService:SetListener(Enum.ListenerType.CFrame, VoiceOrigin.CFrame)
+            end
+            RunService.Heartbeat:wait()
+        end
+        if currentSpiedPlayer and currentSpiedPlayer.player == Player then
+            stopSpying()
+        end
+    end)
+end
+
+local targetPlayersDropdown = mainWindow:Dropdown("Target Players", {}, function(displayName)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.DisplayName == displayName then
+            if currentSpiedPlayer and currentSpiedPlayer.player == player then
+                stopSpying()
+            else
+                stopSpying()
+                SpyVoicechat(player)
+            end
+            break
+        end
+    end
+end)
+
+local function addPlayerToDropdown(player)
+    if player ~= LP then
+        targetPlayersDropdown:Button(player.DisplayName)
+    end
+end
+
+local function removePlayer(player)
+    if currentSpiedPlayer and currentSpiedPlayer.player == player then
+        stopSpying()
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    addPlayerToDropdown(player)
+end
+
+table.insert(connections, Players.PlayerAdded:Connect(addPlayerToDropdown))
+table.insert(connections, Players.PlayerRemoving:Connect(removePlayer))
+
+local function unloadScript()
+    for _, conn in pairs(connections) do
+        conn:Disconnect()
+    end
+    stopSpying()
+    library:Destroy()
+end
+
+mainWindow:Button("Exit", unloadScript)
+
+-- Initialize without automatically spying on anyone
+currentSpiedPlayer = nil
+updateSpyingTarget(nil)

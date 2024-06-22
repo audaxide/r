@@ -1,0 +1,460 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "EnVyP Hub " .. Fluent.Version,
+    SubTitle = "by Audax",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true, -- The blur may be detectable, setting this to false disables blur entirely
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl -- Used when there's no MinimizeKeybind
+})
+
+-- Fluent provides Lucide Icons https://lucide.dev/icons/ for the tabs, icons are optional
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "globe" }),
+    Self = Window:AddTab({ Title = "Self", Icon = "user" }),
+    Players = Window:AddTab({ Title = "Players", Icon = "users" }),
+    Misc = Window:AddTab({ Title = "Misc", Icon = "hammer" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+local Options = Fluent.Options
+
+-- Input for HTML string or URL
+local input = Tabs.Main:AddInput("Input", {
+    Title = "Teleport to Game Instance",
+    Default = "",
+    Placeholder = "Paste String/URL here",
+    Numeric = false, -- Allows letters and numbers
+    Finished = false, -- Only calls callback when you press enter
+    Callback = function(Value)
+        print("Input entered:", Value)
+    end
+})
+
+-- Function to extract placeId and serverId from HTML string or URL
+local function extractPlaceIdAndServerId(input)
+    local placeId, serverId
+
+    -- Handle URL with privateServerLinkCode
+    if string.match(input, "privateServerLinkCode") then
+        placeId = string.match(input, "games/(%d+)")
+        serverId = string.match(input, "privateServerLinkCode=([%w-]+)")
+    else
+        -- Handle HTML with data-placeid and data-serverid
+        placeId = string.match(input, 'data%-placeid="(%d+)"')
+        serverId = string.match(input, 'data%-serverid="([%w-]+)"')
+        
+        -- Handle HTML with onclick attribute
+        if not placeId or not serverId then
+            placeId = string.match(input, 'joinGameInstance%((%d+),')
+            serverId = string.match(input, '&quot;([%w-]+)&quot;')
+        end
+    end
+
+    return placeId, serverId
+end
+
+-- Button to extract values and teleport
+Tabs.Main:AddButton({
+    Title = "Join Game",
+    Description = "Join the game instance with the extracted Place ID and Server ID",
+    Callback = function()
+        local inputText = Options.Input.Value
+        local placeId, serverId = extractPlaceIdAndServerId(inputText)
+
+        if placeId and serverId and serverId ~= "" then
+            local teleportService = game:GetService("TeleportService")
+            local player = game.Players.LocalPlayer
+            teleportService:TeleportToPlaceInstance(tonumber(placeId), serverId, player)
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Failed to extract Place ID and Server ID from the provided input.",
+                Duration = 5
+            })
+        end
+    end
+})
+
+-- Button to load Remote Spy script
+Tabs.Main:AddButton({
+    Title = "Remote Spy",
+    Description = "Load Remote Spy script",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua"))()
+    end
+})
+
+-- Button to load Dex Explorer script
+Tabs.Main:AddButton({
+    Title = "Dex Explorer",
+    Description = "Load Dex Explorer script",
+    Callback = function()
+        Fluent:Notify({
+            Title = "Loading",
+            Content = "Hold on a sec",
+            Duration = 5
+        })
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
+    end
+})
+
+-- Button to load Voicechat Spy script
+Tabs.Main:AddButton({
+    Title = "Voicechat Spy",
+    Description = "Load Voicechat Spy script",
+    Callback = function()
+        Fluent:Notify({
+            Title = "Loading",
+            Content = "Hold on a sec",
+            Duration = 5
+        })
+        getgenv().VoicechatSpySettings = {
+            TrackVoice3d = false,
+            FollowDistance = 0
+        }
+        loadstring(game:HttpGet("https://pastebin.com/raw/yBPxLhPk"))()
+    end
+})
+
+-- Button to load Team Changer script
+Tabs.Main:AddButton({
+    Title = "Team Changer",
+    Description = "Load Team Changer script",
+    Callback = function()
+        Fluent:Notify({
+            Title = "Loading",
+            Content = "Hold on a sec",
+            Duration = 5
+        })
+        loadstring(game:HttpGet("https://pastebin.com/raw/yghS0pYA"))()
+    end
+})
+
+-- Function to toggle All Chat View
+local function toggleAllChatView(enabled)
+    local chatService = game:GetService("Chat")
+    chatService:RegisterChatCallback(Enum.ChatCallbackType.OnCreatingChatWindow, function(chatFrame, channelName)
+        local chatSettings = require(game:GetService("Chat"):WaitForChild("ClientChatModules"):WaitForChild("ChatSettings"))
+        if enabled then
+            chatSettings.ShowChannelsBar = true
+            chatSettings.DefaultChannels = { "All", "Team", "Whisper" }
+            chatSettings.ShowAllChannels = true
+        else
+            chatSettings.ShowChannelsBar = false
+        end
+        return chatFrame
+    end)
+end
+
+-- Add Toggle for All Chat View
+local allChatViewToggle = Tabs.Players:AddToggle("AllChatViewToggle", {Title = "Toggle All Chat View", Default = false})
+allChatViewToggle:OnChanged(function()
+    toggleAllChatView(Options.AllChatViewToggle.Value)
+end)
+Options.AllChatViewToggle:SetValue(false)
+
+-- Input for Target Person
+local targetPersonInput = Tabs.Players:AddInput("TargetPersonInput", {
+    Title = "Target Person",
+    Default = "",
+    Placeholder = "Enter display or username",
+    Numeric = false, -- Allows letters and numbers
+    Finished = false, -- Only calls callback when you press enter
+    Callback = function(Value)
+        print("Target person entered:", Value)
+    end
+})
+
+-- Function to go to a specific person
+local function goToPerson(name)
+    local targetPlayer = nil
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player.Name:lower() == name:lower() or player.DisplayName:lower() == name:lower() then
+            targetPlayer = player
+            break
+        end
+    end
+
+    if targetPlayer then
+        local character = targetPlayer.Character
+        if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                local player = game.Players.LocalPlayer
+                local playerCharacter = player.Character
+                if playerCharacter then
+                    local playerRootPart = playerCharacter:FindFirstChild("HumanoidRootPart")
+                    if playerRootPart then
+                        playerRootPart.CFrame = rootPart.CFrame
+                    else
+                        Fluent:Notify({
+                            Title = "Error",
+                            Content = "Your character's HumanoidRootPart not found.",
+                            Duration = 5
+                        })
+                    end
+                else
+                    Fluent:Notify({
+                        Title = "Error",
+                        Content = "Your character not found.",
+                        Duration = 5
+                    })
+                end
+            else
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = targetPlayer.Name .. "'s HumanoidRootPart not found.",
+                    Duration = 5
+                })
+            end
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = targetPlayer.Name .. "'s character not found.",
+                Duration = 5
+            })
+        end
+    else
+        Fluent:Notify({
+            Title = "Error",
+            Content = "Player " .. name .. " not found.",
+            Duration = 5
+        })
+    end
+end
+
+-- Function to view a specific character by display name or username
+local viewingCharacter = false
+
+local function viewCharacter(name)
+    local targetPlayer = nil
+    for _, player in pairs(game.Players:GetPlayers()) do
+        if player.Name:lower() == name:lower() or player.DisplayName:lower() == name:lower() then
+            targetPlayer = player
+            break
+        end
+    end
+
+    if targetPlayer then
+        local camera = game.Workspace.CurrentCamera
+        if viewingCharacter then
+            camera.CameraSubject = game.Players.LocalPlayer.Character
+            viewingCharacter = false
+            Fluent:Notify({
+                Title = "View Character",
+                Content = "Stopped viewing character.",
+                Duration = 5
+            })
+        else
+            camera.CameraSubject = targetPlayer.Character
+            viewingCharacter = true
+            Fluent:Notify({
+                Title = "View Character",
+                Content = "Now viewing " .. name,
+                Duration = 5
+            })
+        end
+    else
+        Fluent:Notify({
+            Title = "Error",
+            Content = "Player " .. name .. " not found.",
+            Duration = 5
+        })
+    end
+end
+
+-- Button to go to person
+Tabs.Players:AddButton({
+    Title = "Go to Person",
+    Description = "Teleport to a specific person in the game",
+    Callback = function()
+        local targetName = Options.TargetPersonInput.Value
+        goToPerson(targetName)
+    end
+})
+
+-- Button to view the character
+Tabs.Players:AddButton({
+    Title = "View Character",
+    Description = "View a specific character",
+    Callback = function()
+        local name = Options.TargetPersonInput.Value
+        viewCharacter(name)
+    end
+})
+
+-- Function to toggle Fullbright
+local function toggleFullbright(enabled)
+    if enabled then
+        game:GetService("Lighting").Brightness = 2
+        game:GetService("Lighting").ClockTime = 14
+        game:GetService("Lighting").FogEnd = 100000
+        game:GetService("Lighting").GlobalShadows = false
+        game:GetService("Lighting").OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    else
+        -- Reset to default values or whatever values you want when Fullbright is disabled
+        game:GetService("Lighting").Brightness = 1
+        game:GetService("Lighting").ClockTime = 12
+        game:GetService("Lighting").FogEnd = 10000
+        game:GetService("Lighting").GlobalShadows = true
+        game:GetService("Lighting").OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+    end
+end
+
+-- Add Toggle for Fullbright
+local fullbrightToggle = Tabs.Misc:AddToggle("FullbrightToggle", {Title = "Toggle Fullbright", Default = false})
+fullbrightToggle:OnChanged(function()
+    toggleFullbright(Options.FullbrightToggle.Value)
+end)
+Options.FullbrightToggle:SetValue(false)
+
+-- 
+Tabs.Self:AddButton({
+    Title = "Emotes Menu",
+    Description = "Load Emotes script",
+    Callback = function()
+        loadstring(game:HttpGetAsync("https://gist.githubusercontent.com/RedZenXYZ/3da6af1961efa275de6c3c2a6dbace03/raw/bb027f99cec0ea48ef9c5eabfb9116ddff20633d/FE%2520Emotes%2520Gui"))()
+    end
+})
+
+-- Slider for WalkSpeed
+local walkSpeedSlider = Tabs.Self:AddSlider("WalkSpeedSlider", {
+    Title = "WalkSpeed",
+    Description = "Adjust your character's WalkSpeed",
+    Default = 16,
+    Min = 1,
+    Max = 100,
+    Rounding = 1,
+    Callback = function(Value)
+        local player = game.Players.LocalPlayer
+        local character = player.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = Value
+            end
+        end
+    end
+})
+
+walkSpeedSlider:OnChanged(function(Value)
+    print("WalkSpeed changed:", Value)
+end)
+Options.WalkSpeedSlider:SetValue(16)
+
+-- Slider for JumpPower
+local jumpPowerSlider = Tabs.Self:AddSlider("JumpPowerSlider", {
+    Title = "JumpPower",
+    Description = "Adjust your character's JumpPower",
+    Default = 50,
+    Min = 50,
+    Max = 150,
+    Rounding = 1,
+    Callback = function(Value)
+        local player = game.Players.LocalPlayer
+        local character = player.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.JumpPower = Value
+            end
+        end
+    end
+})
+
+jumpPowerSlider:OnChanged(function(Value)
+    print("JumpPower changed:", Value)
+end)
+Options.JumpPowerSlider:SetValue(50)
+
+-- Function to toggle Infinite Jump
+local infiniteJumpConnection
+local function toggleInfiniteJump(enabled)
+    if enabled then
+        infiniteJumpConnection = game:GetService("UserInputService").JumpRequest:Connect(function()
+            local player = game.Players.LocalPlayer
+            local character = player.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end)
+    else
+        if infiniteJumpConnection then
+            infiniteJumpConnection:Disconnect()
+            infiniteJumpConnection = nil
+        end
+    end
+end
+
+-- Add Toggle for Infinite Jump
+local infiniteJumpToggle = Tabs.Self:AddToggle("InfiniteJumpToggle", {Title = "Toggle Infinite Jump", Default = false})
+infiniteJumpToggle:OnChanged(function()
+    toggleInfiniteJump(Options.InfiniteJumpToggle.Value)
+end)
+Options.InfiniteJumpToggle:SetValue(false)
+
+-- Function to toggle Instant Proximity Prompt
+local instantProximityPromptConnection
+local function toggleInstantProximityPrompt(enabled)
+    if enabled then
+        instantProximityPromptConnection = game:GetService("ProximityPromptService").PromptButtonHoldBegan:Connect(function(prompt)
+            prompt.HoldDuration = 0
+        end)
+    else
+        if instantProximityPromptConnection then
+            instantProximityPromptConnection:Disconnect()
+            instantProximityPromptConnection = nil
+        end
+    end
+end
+
+-- Add Toggle for Instant Proximity Prompt
+local instantProximityPromptToggle = Tabs.Self:AddToggle("InstantProximityPromptToggle", {Title = "Toggle Instant Proximity Prompt", Default = false})
+instantProximityPromptToggle:OnChanged(function()
+    toggleInstantProximityPrompt(Options.InstantProximityPromptToggle.Value)
+end)
+Options.InstantProximityPromptToggle:SetValue(false)
+
+-- Addons:
+-- SaveManager (Allows you to have a configuration system)
+-- InterfaceManager (Allows you to have a interface management system)
+
+-- Hand the library over to our managers
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+-- Ignore keys that are used by ThemeManager.
+-- (we don't want configs to save themes, do we?)
+SaveManager:IgnoreThemeSettings()
+
+-- You can add indexes of elements the save manager should ignore
+SaveManager:SetIgnoreIndexes({})
+
+-- use case for doing it this way:
+-- a script hub could have themes in a global folder
+-- and game configs in a separate folder per game
+InterfaceManager:SetFolder("FluentScriptHub")
+SaveManager:SetFolder("FluentScriptHub/specific-game")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Window:SelectTab(1)
+
+Fluent:Notify({
+    Title = "EnVyP Hub",
+    Content = "The script has been loaded.",
+    Duration = 8
+})
+
+-- You can use the SaveManager:LoadAutoloadConfig() to load a config
+-- which has been marked to be one that auto loads!
+SaveManager:LoadAutoloadConfig()

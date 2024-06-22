@@ -1,0 +1,111 @@
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Turtle-Brand/Turtle-Lib/main/source.lua"))()
+
+getgenv().VoicechatSpySettings = {
+    TrackVoice3d = false,
+    FollowDistance = 5
+}
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local mainWindow = library:Window("Voicechat Spy")
+local spyingTargetLabel = mainWindow:Label("Spying: None")
+
+local currentSpiedPlayer = nil
+local connections = {}
+local viewChangedConnection = nil
+
+local function updateSpyingTarget(displayName)
+    spyingTargetLabel.Text = "Spying: " .. (displayName or "None")
+end
+
+local function stopSpying()
+    if currentSpiedPlayer then
+        currentSpiedPlayer.state = false
+        currentSpiedPlayer = nil
+        updateSpyingTarget(nil)
+        game:GetService("SoundService"):SetListener(Enum.ListenerType.Camera)
+        -- Revert camera to local player's character
+        workspace.CurrentCamera.CameraSubject = game:GetService("Players").LocalPlayer.Character
+        if viewChangedConnection then
+            viewChangedConnection:Disconnect()
+            viewChangedConnection = nil
+        end
+    end
+end
+
+local function spyOnPlayer(player)
+    if currentSpiedPlayer and currentSpiedPlayer.player == player then
+        stopSpying()
+        return
+    end
+    stopSpying()
+    currentSpiedPlayer = {player = player, state = true}
+    updateSpyingTarget(player.DisplayName)
+    -- Change camera to target player's character
+    workspace.CurrentCamera.CameraSubject = player.Character
+
+    viewChangedConnection = workspace.CurrentCamera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        -- Ensure the camera follows the target player's character
+        workspace.CurrentCamera.CameraSubject = player.Character
+    end)
+
+    task.spawn(function()
+        while currentSpiedPlayer and currentSpiedPlayer.state do
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if getgenv().VoicechatSpySettings.TrackVoice3d then
+                    game:GetService("SoundService"):SetListener(Enum.ListenerType.CFrame, player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, getgenv().VoicechatSpySettings.FollowDistance))
+                else
+                    game:GetService("SoundService"):SetListener(Enum.ListenerType.Camera)
+                end
+                game:GetService("RunService").Heartbeat:Wait()
+            else
+                stopSpying()
+                break
+            end
+        end
+        if viewChangedConnection then
+            viewChangedConnection:Disconnect()
+            viewChangedConnection = nil
+        end
+    end)
+end
+
+local targetPlayersDropdown = mainWindow:Dropdown("Target Players", {}, function(displayName)
+    for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+        if player.DisplayName == displayName then
+            spyOnPlayer(player)
+            break
+        end
+    end
+end)
+
+local function addPlayerToDropdown(player)
+    if player ~= game:GetService("Players").LocalPlayer then
+        targetPlayersDropdown:Button(player.DisplayName)
+    end
+end
+
+local function removePlayer(player)
+    if currentSpiedPlayer and currentSpiedPlayer.player == player then
+        stopSpying()
+    end
+end
+
+for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+    addPlayerToDropdown(player)
+end
+
+table.insert(connections, game:GetService("Players").PlayerAdded:Connect(addPlayerToDropdown))
+table.insert(connections, game:GetService("Players").PlayerRemoving:Connect(removePlayer))
+
+local function unloadScript()
+    for _, conn in pairs(connections) do
+        conn:Disconnect()
+    end
+    stopSpying()
+    library:Destroy()
+end
+
+mainWindow:Button("Exit", unloadScript)
